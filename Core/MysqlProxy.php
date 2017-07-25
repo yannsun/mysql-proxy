@@ -145,7 +145,7 @@ class MysqlProxy {
 //                'maxconn' =>20
 //            ),
 //        ),
-//        'weight_array'=[0,1,1,1,2]
+//        'slave_weight_array'=[0,1,1,1,2]
 //    ),
 //);
                 $node = $key;
@@ -153,10 +153,12 @@ class MysqlProxy {
                 foreach ($value['db'] as $db) {
                     $ex = explode(";", $db);
                     $name = explode("=", $ex[0])[1];
-                    $configRet[$node."_".$name] = $this->getEntry($db, $value);
+                    $configRet[$node . "_" . $name] = $this->getEntry($db, $value);
                 }
             }
         }
+        var_dump($configRet);
+        die;
         $this->targetConfig = $configRet;
     }
 
@@ -218,7 +220,7 @@ class MysqlProxy {
             throw new \Exception("the master_host can not be null");
         } else {
             $hostEx = explode(":", $value['master_host']);
-            $ret[$dbArr['database']]['master'] = array(
+            $ret['master'] = array(
                 'host' => $hostEx[0],
                 'port' => $hostEx[1],
                 'user' => $value['username'],
@@ -230,13 +232,13 @@ class MysqlProxy {
         }
         //init slave
         if (isset($value['slave_host'])) {
-            $ret[$dbArr['database']]['weight_array'] = [];
+            $ret['slave_weight_array'] = [];
+            $index = 0;
             foreach ($value['slave_host'] as $slave) {
                 $sEX = explode(";", $slave);
                 $sHost = $sEX[0];
                 $hostEx = explode(":", $sHost);
-                $index = 0;
-                $ret[$dbArr['database']]['slave'][] = array(
+                $ret['slave'][] = array(
                     'host' => $hostEx[0],
                     'port' => $hostEx[1],
                     'user' => $value['username'],
@@ -246,11 +248,11 @@ class MysqlProxy {
                     'maxconn' => $realMax
                 );
 
-                //init weight_array
+                //init slave_weight_array
                 //weight=1
                 $weightEx = explode("=", $sEX[1]);
                 $weight = (int) $weightEx[1];
-                array_pad($ret[$dbArr['database']]['weight_array'], $weight, $index);
+                $ret['slave_weight_array'] = array_pad($ret['slave_weight_array'], count($ret['slave_weight_array']) + $weight, $index);
                 $index++;
             }
         }
