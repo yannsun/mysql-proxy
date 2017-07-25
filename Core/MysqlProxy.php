@@ -41,7 +41,8 @@ class MysqlProxy {
     const COM_QUIT = 1;
     const COM_PREPARE = 22;
 
-    private $targetConfig = array();
+    private $targetConfig = [];
+    private $nodes = [];
 
     private function createTable() {
         $this->table = new \swoole_table(1024);
@@ -149,17 +150,14 @@ class MysqlProxy {
 //    ),
 //);
                 $node = $key;
-                $configRet = [];
+                $this->nodes[] = $node;
                 foreach ($value['db'] as $db) {
                     $ex = explode(";", $db);
                     $name = explode("=", $ex[0])[1];
-                    $configRet[$node . "_" . $name] = $this->getEntry($db, $value);
+                    $this->targetConfig[$node . "_" . $name] = $this->getEntry($db, $value);
                 }
             }
         }
-        var_dump($configRet);
-        die;
-        $this->targetConfig = $configRet;
     }
 
     /*
@@ -266,14 +264,22 @@ class MysqlProxy {
     public function OnReceive($serv, $fd, $from_id, $data) {
         if ($this->client[$fd]['status'] == self::CONNECT_SEND_AUTH) {
             $dbName = $this->protocal->getDbName($data);
-            if (!isset($this->targetConfig[$dbName])) {
+            $findDb = false;
+            foreach ($this->nodes as $node) {
+                if (isset($this->targetConfig[$node."_".$dbName])) {
+                   $realDbName = $node."_".$dbName;
+                   $findDb = true;
+                   break;
+                }
+            }
+            if (!$findDb) {
                 echo "db $dbName can not find\n";
                 $binaryData = $this->protocal->packErrorData(10000, "db '$dbName' can not find in mysql proxy config");
                 return $this->serv->send($fd, $binaryData);
             }
             $this->protocal->sendConnectOk($serv, $fd);
             $this->client[$fd]['status'] = self::CONNECT_SEND_ESTA;
-            $this->client[$fd]['dbName'] = $dbName;
+            $this->client[$fd]['dbName'] = $realDbName;
             //   $this->client[$fd]['clientAuthData'] = $data;
             return;
         }

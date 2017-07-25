@@ -5,6 +5,11 @@ namespace Core;
 class MySQL {
 
     const DEFAULT_PORT = 3306;
+    
+    const ERROR_CONN = 10001;
+    const ERROR_AUTH = 10002;
+    const ERROR_QUERY = 10003;
+    const ERROR_PREPARE = 10004;
 
     private $protocal = null;
     public $onResult = null;
@@ -64,7 +69,7 @@ class MySQL {
         echo "close with mysql\n";
         $this->remove($db); //如果此链接在idel里面就剔除
         if ($db->clientFd > 0) {//如果此链接已经分配给了客户端,则向客户端发送错误信息(重启mysql才会发生这种情况，session timeout的时候除非分配连接和gone away同时发生)
-            $binaryData = $this->protocal->packErrorData(ERROR_CONN, "close with mysql");
+            $binaryData = $this->protocal->packErrorData(self::ERROR_CONN, "close with mysql");
             return call_user_func($this->onResult, $binaryData, $db->clientFd);
         }
     }
@@ -73,7 +78,7 @@ class MySQL {
         if ($db->status == "CONNECT") {
             $binary = $this->protocal->responseAuth($data, $this->config['database'], $this->config['user'], $this->config['password'], $this->config['charset']);
             if (is_array($binary)) {//error??
-                $binaryData = $this->protocal->packErrorData(ERROR_CONN, $binary['error_msg']);
+                $binaryData = $this->protocal->packErrorData(self::ERROR_CONN, $binary['error_msg']);
                 echo "链接mysql 失败 {$binary['error_msg']}\n";
                 return call_user_func($this->onResult, $binaryData, $db->clientFd);
             }
@@ -87,7 +92,7 @@ class MySQL {
                 return $this->join($db);
             } else {
                 echo "链接mysql 失败 $ret\n";
-                $binaryData = $this->protocal->packErrorData(ERROR_AUTH, "auth error when connect");
+                $binaryData = $this->protocal->packErrorData(self::ERROR_AUTH, "auth error when connect");
                 call_user_func($this->onResult, $binaryData, $db->clientFd);
             }
         } else {
@@ -124,7 +129,7 @@ class MySQL {
 
     public function onError($db) {
         echo "something error {$db->errCode}\n";
-        $binaryData = $this->protocal->packErrorData(ERROR_QUERY, "something error {$db->errCode}");
+        $binaryData = $this->protocal->packErrorData(self::ERROR_QUERY, "something error {$db->errCode}");
         return call_user_func($this->onResult, $binaryData, $db->clientFd);
     }
 
@@ -132,7 +137,7 @@ class MySQL {
         $db = new \swoole_client(SWOOLE_SOCK_TCP, SWOOLE_SOCK_ASYNC);
         $db->set([
             'open_length_check' => 1,
-            'open_tcp_nodelay'=>true,
+            'open_tcp_nodelay' => true,
             'package_length_func' => 'mysql_proxy_get_length'
                 ]
         );
