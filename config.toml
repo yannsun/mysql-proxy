@@ -1,0 +1,57 @@
+#是否开启记录日志功能，开启后每次查询都会发送给REDIS_HOST所在的redis，用于生成web管理界面 统计慢查询等
+#开启后会降低30%左右的性能
+[common]
+record_query = false
+
+#记录客户端sql查询的redis机器
+redis_host = "127.0.0.1:6379"
+
+#redis key
+redis_slow ="sqlslow"
+redis_big="sqlbig"
+
+#swoole table的key
+mysql_conn_key="proxy_conn_key"
+mysql_conn_redis_key="proxy_connection"
+
+#swoole server通用配置信息
+worker_num=5
+#task 用于上报查询用
+task_worker_num=1
+#swoole server的 日志
+swoole_log="/tmp/sqlproxy.log"
+#监听端口
+port = 9536
+#是否守护进程方式运行
+daemon=false
+
+
+#mysql数据源配置
+
+#'node1'名字可以随意改 每个node代表一组主从配置
+[node1]
+        #主库实例配置
+        master_host = "127.0.0.1:3306"
+
+        #主库和从库用户名密码必须一致
+        username = "root"
+        password= "test"
+
+        #从库实例配置
+        slave_host = ["127.0.0.1:3306;weight=1","127.0.0.1:3306;weight=2"]
+
+        #所有允许的数据库名,后面可以可选的配置每个db的charset和最大连接数，如果不配置走默认的
+        db = ["name=db1;charset=gbk","name=db2;max_conn=100","name=mysql"] 
+
+        #每个实例每个db默认的最大连接数
+        default_max_conn = 20
+        #每个db默认的字符集
+        default_charset = "utf8"
+[node2]
+        master_host = "192.168.1.111:3306"
+        username = "username"
+        password= "password"
+        slave_host = ["192.168.1.121:3306;weight=1","192.168.80.122:3306;weight=2"]
+        db = ["name=db1;charset=gbk","name=db2;max_conn=100","name=db3"] 
+        default_max_conn = 20
+        default_charset = "utf8"

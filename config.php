@@ -22,13 +22,7 @@ define("REDIS_BIG", "sqlbig");
 define("MYSQL_CONN_KEY", "proxy_conn_key");
 define("MYSQL_CONN_REDIS_KEY", "proxy_connection");
 
-/*
- * 错误码定义
- */
-define("ERROR_CONN", 10001);
-define("ERROR_AUTH", 10002);
-define("ERROR_QUERY", 10003);
-define("ERROR_PREPARE", 10004);
+
 
 
 /*
