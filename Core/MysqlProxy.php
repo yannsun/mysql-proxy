@@ -12,8 +12,8 @@ class MysqlProxy {
      * 上报sql数据到集中redis里面
      */
     private $redis = null;
-    private $redisHost = REDIS_HOST;
-    private $redisPort = REDIS_PORT;
+    private $redisHost = NULL;
+    private $redisPort = NULL;
     /*
      * PROXY的ip 用于proxy集群上报加到key里面
      */
@@ -65,12 +65,11 @@ class MysqlProxy {
     }
 
     public function init() {
-
+        $this->getConfig();
         $this->serv = new \swoole_server('0.0.0.0', PORT, SWOOLE_BASE, SWOOLE_SOCK_TCP);
         $this->serv->set([
             'worker_num' => WORKER_NUM,
             'task_worker_num' => TASK_WORKER_NUM,
-            'dispatch_mode' => 2,
             'open_length_check' => 1,
             'open_tcp_nodelay' => true,
             'log_file' => SWOOLE_LOG,
@@ -78,7 +77,6 @@ class MysqlProxy {
             'package_length_func' => 'mysql_proxy_get_length'
                 ]
         );
-        $this->getConfig();
         $this->createTable();
         $this->protocal = new \MysqlProtocol();
         $this->pool = array(); //mysql的池子
@@ -98,9 +96,165 @@ class MysqlProxy {
 //        $env = get_cfg_var('env.name') ? get_cfg_var('env.name') : 'product';
 //        $jsonConfig = \CloudConfig::get("platform/proxy_shequ", "test");
 //        $config = json_decode($jsonConfig, true);
+        /*
+         * 错误码定义
+         */
+        $ret = [];
 
+        $array = \Yosymfony\Toml\Toml::Parse(__DIR__ . '/../config.toml');
+        foreach ($array as $key => $value) {
+            if ($key == "common") {
 
-        $this->targetConfig = MYSQL_CONF;
+                $ex = explode(":", $value['redis_host']);
+                $this->redisHost = $ex[0];
+                $this->redisPort = $ex[1];
+
+                define("RECORD_QUERY", $value['record_query']);
+                define("REDIS_SLOW", $value['redis_slow']);
+                define("REDIS_BIG", $value['redis_big']);
+
+                define("MYSQL_CONN_KEY", $value['mysql_conn_key']);
+                define("MYSQL_CONN_REDIS_KEY", $value['mysql_conn_redis_key']);
+
+                define("WORKER_NUM", $value['worker_num']);
+                define("TASK_WORKER_NUM", $value['task_worker_num']);
+                define("SWOOLE_LOG", $value['swoole_log']);
+                define("DAEMON", $value['daemon']);
+                define("PORT", $value['port']);
+            } else {//nodes
+//config layout
+//$config = array(
+//    'node1_db1' => array(
+//        'master' => array(
+//            'host' => '10.10.2.73',
+//            'port' => 3306,
+//            'user' => 'root',
+//            'password' => 'xxxxx',
+//            'database' => 'db1',
+//            'charset' => 'utf8',
+//            'maxconn' =>20
+//        ),
+//        'slave' => array(
+//            array(
+//                'host' => '10.10.2.73',
+//                'port' => 3306,
+//                'user' => 'root',
+//                'password' => 'xxxxxx',
+//                'database' => 'db1',
+//                'charset' => 'utf8',
+//                'maxconn' =>20
+//            ),
+//        ),
+//        'weight_array'=[0,1,1,1,2]
+//    ),
+//);
+                $node = $key;
+                $configRet = [];
+                foreach ($value['db'] as $db) {
+                    $ex = explode(";", $db);
+                    $name = explode("=", $ex[0])[1];
+                    $configRet[$node."_".$name] = $this->getEntry($db, $value);
+                }
+            }
+        }
+        $this->targetConfig = $configRet;
+    }
+
+    /*
+     * 获取每个db维度的配置
+     */
+
+    private function getEntry($db, $value) {
+        $dbEx = explode(";", $db);
+        // parse `db = ["name=db1;charset=gbk","name=db2;max_conn=100","name=db3"] `
+        $dbArr = $ret = [];
+        foreach ($dbEx as $v) {
+            $exDb = explode("=", $v);
+            switch ($exDb[0]) {
+                case "name":
+                    $dbArr['database'] = $exDb[1];
+                    break;
+                case "charset":
+                    $dbArr['charset'] = $exDb[1];
+                    break;
+                case "max_conn":
+                    $dbArr['maxconn'] = $exDb[1];
+                    break;
+                default:
+                    throw new \Exception("the config format error $v");
+                    break;
+            }
+        }
+        //charset  max_conn如果没设置走默认的
+        if (!isset($dbArr['charset'])) {
+            $dbArr['charset'] = $value['default_charset'];
+        }
+        if (!isset($dbArr['maxconn'])) {
+            $dbArr['maxconn'] = $value['default_max_conn'];
+        }
+
+        //check all
+        if (!isset($dbArr['database'])) {
+            throw new \Exception("the db name can not be null");
+        }
+        if (!isset($dbArr['maxconn'])) {
+            throw new \Exception("the maxconn can not be null");
+        } else {
+            //计算每个worker分多少连接
+            $realMax = (int) ceil($dbArr['maxconn'] / WORKER_NUM);
+        }
+        if (!isset($dbArr['charset'])) {
+            throw new \Exception("the charset can not be null");
+        }
+        if (!isset($value['username'])) {
+            throw new \Exception("the username can not be null");
+        }
+        if (!isset($value['password'])) {
+            throw new \Exception("the password can not be null");
+        }
+
+        //init master
+        if (!isset($value['master_host'])) {
+            throw new \Exception("the master_host can not be null");
+        } else {
+            $hostEx = explode(":", $value['master_host']);
+            $ret[$dbArr['database']]['master'] = array(
+                'host' => $hostEx[0],
+                'port' => $hostEx[1],
+                'user' => $value['username'],
+                'password' => $value['password'],
+                'database' => $dbArr['database'],
+                'charset' => $dbArr['charset'],
+                'maxconn' => $realMax
+            );
+        }
+        //init slave
+        if (isset($value['slave_host'])) {
+            $ret[$dbArr['database']]['weight_array'] = [];
+            foreach ($value['slave_host'] as $slave) {
+                $sEX = explode(";", $slave);
+                $sHost = $sEX[0];
+                $hostEx = explode(":", $sHost);
+                $index = 0;
+                $ret[$dbArr['database']]['slave'][] = array(
+                    'host' => $hostEx[0],
+                    'port' => $hostEx[1],
+                    'user' => $value['username'],
+                    'password' => $value['password'],
+                    'database' => $dbArr['database'],
+                    'charset' => $dbArr['charset'],
+                    'maxconn' => $realMax
+                );
+
+                //init weight_array
+                //weight=1
+                $weightEx = explode("=", $sEX[1]);
+                $weight = (int) $weightEx[1];
+                array_pad($ret[$dbArr['database']]['weight_array'], $weight, $index);
+                $index++;
+            }
+        }
+        return $ret;
     }
 
     public function start() {
@@ -127,7 +281,7 @@ class MysqlProxy {
             $sql = $ret['sql'];
             if ($cmd !== self::COM_QUERY) {
                 if ($cmd === self::COM_PREPARE) {
-                    $binary = $this->protocal->packErrorData(ERROR_PREPARE, "proxy do not support remote prepare , (PDO example:set PDO::ATTR_EMULATE_PREPARES=true)");
+                    $binary = $this->protocal->packErrorData(MySQL::ERROR_PREPARE, "proxy do not support remote prepare , (PDO example:set PDO::ATTR_EMULATE_PREPARES=true)");
                     return $this->serv->send($fd, $binary);
                 }
                 if ($cmd === self::COM_QUIT) {//直接关闭和client链接
