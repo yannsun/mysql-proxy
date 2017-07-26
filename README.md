@@ -9,9 +9,9 @@
 * 慢SQL/超大结果集监控和报警
 * 自动分库分表（正在开发中）
 
-##安装
-*首先clone下来后cd到cpp_module/PHP-X 安装phpx，参考`https://github.com/swoole/PHP-X`
-*安装mysql-proxy扩展,cd到cpp_module,make && make install
-*配置php.ini 载入mysql-proxy.so
-*配置config.toml
-*启动 php proxystart.php 
+## 安装
+* 首先clone下来后cd到cpp_module/PHP-X 安装phpx，参考`https://github.com/swoole/PHP-X`
+* 安装mysql-proxy扩展,cd到cpp_module,make && make install
+* 配置php.ini 载入mysql-proxy.so
+* 配置config.toml
+* 启动 php proxystart.php 
