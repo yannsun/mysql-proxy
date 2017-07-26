@@ -292,8 +292,8 @@ class MysqlProxy {
             $pre = substr($sql, 0, 5);
             if (stristr($pre, "select") || stristr($pre, "show")) {
                 if (isset($this->targetConfig[$dbName]['slave'])) {
-                    $count = count($this->targetConfig[$dbName]['slave']);
-                    $index = random_int(0, $count - 1); //随机均衡
+                    shuffle($this->targetConfig[$dbName]['slave_weight_array']);
+                    $index = $this->targetConfig[$dbName]['slave_weight_array'][0];
                     $config = $this->targetConfig[$dbName]['slave'][$index];
                 } else {//未配置从 直接走主
                     $config = $this->targetConfig[$dbName]['master'];
