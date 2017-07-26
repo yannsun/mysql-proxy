@@ -1,0 +1,3 @@
+[submodule "cpp_module/PHP-X"]
+	path = cpp_module/PHP-X
+	url = https://github.com/swoole/PHP-X.git
