@@ -35,7 +35,7 @@ daemon=false
 
         #主库和从库用户名密码必须一致
         username = "root"
-        password= "test"
+        password= "xxxx"
 
         #从库实例配置
         slave_host = ["127.0.0.1:3306;weight=1","127.0.0.1:3306;weight=2"]
@@ -47,11 +47,13 @@ daemon=false
         default_max_conn = 20
         #每个db默认的字符集
         default_charset = "utf8"
+
+#多组node间 dbname不能相同，如果分库后请在每个db后面加后缀，或者启动多个proxy实例，以后支持分库分表后就可以解决了
 [node2]
-        master_host = "192.168.1.111:3306"
-        username = "username"
-        password= "password"
-        slave_host = ["192.168.1.121:3306;weight=1","192.168.80.122:3306;weight=2"]
-        db = ["name=db1;charset=gbk","name=db2;max_conn=100","name=db3"] 
+        master_host = "127.0.0.1:3306"
+        username = "root"
+        password= "xxxx"
+        slave_host = ["127.0.0.1:3306;weight=1","127.0.0.1:3306;weight=2"]
+        db = ["name=testdb"] 
         default_max_conn = 20
         default_charset = "utf8"
