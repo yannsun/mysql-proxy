@@ -10,7 +10,8 @@
 * 自动分库分表（正在开发中）
 
 ## 安装
-* 首先clone下来，然后cd到cpp_module/PHP-X，安装phpx，参考`https://github.com/swoole/PHP-X`
+* 首先clone下来，然后执行`git submodule update --init --recursive` 拉取子项目。
+* 然后cd到cpp_module/PHP-X，安装phpx，参考`https://github.com/swoole/PHP-X`
 * 安装最新版本的 `swoole-src` 的1.9分支代码(>=1.9.16)
 * 安装 mysql-proxy 扩展，cd到cpp_module，`make && make install`
 * 配置 php.ini 载入mysql-proxy.so
