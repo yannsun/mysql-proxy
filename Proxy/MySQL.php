@@ -68,7 +68,7 @@ class MySQL {
     }
 
     public function onClose($db) {//mysql主动断开了和proxy的链接
-        echo "close with mysql\n";
+        \Logger::log("close with mysql");
         $this->remove($db); //如果此链接在idle里面就剔除
         if ($db->clientFd > 0) {//如果此链接已经分配给了客户端,则向客户端发送错误信息(重启mysql才会发生这种情况，session timeout的时候除非分配连接和gone away同时发生)
             $binaryData = $this->protocol->packErrorData(self::ERROR_CONN, "close with mysql");
@@ -81,7 +81,7 @@ class MySQL {
             $binary = $this->protocol->responseAuth($data, $this->config['database'], $this->config['user'], $this->config['password'], $this->config['charset']);
             if (is_array($binary)) {//error??
                 $binaryData = $this->protocol->packErrorData(self::ERROR_CONN, $binary['error_msg']);
-                echo "链接mysql 失败 {$binary['error_msg']}\n";
+                \Logger::log("连接mysql 失败 {$binary['error_msg']}");
                 call_user_func($this->onResult, $binaryData, $db->clientFd);
                 return;
             }
@@ -92,11 +92,11 @@ class MySQL {
             $ret = $this->protocol->getConnResult($data);
             if ($ret == 1) {
                 $db->status = "EST";
-                echo "链接mysql 成功 $ret\n";
+                \Logger::log("连接mysql 成功 $ret");
                 $this->join($db);
                 return;
             } else {
-                echo "链接mysql 失败 $ret\n";
+                \Logger::log("连接mysql 失败 $ret");
                 $binaryData = $this->protocol->packErrorData(self::ERROR_AUTH, "auth error when connect");
                 call_user_func($this->onResult, $binaryData, $db->clientFd);
             }
@@ -133,7 +133,7 @@ class MySQL {
     }
 
     public function onError($db) {
-        echo "something error {$db->errCode}\n";
+        \Logger::log("something error {$db->errCode}");
         $binaryData = $this->protocol->packErrorData(self::ERROR_QUERY, "something error {$db->errCode}");
         return call_user_func($this->onResult, $binaryData, $db->clientFd);
     }
@@ -150,7 +150,7 @@ class MySQL {
         $db->on('receive', array($this, 'onReceive'));
         $db->on('error', array($this, 'onError'));
         $db->on("connect", function($cli) {
-            echo "connect to mysql\n";
+            \Logger::log("connect to mysql");
         });
         $db->status = "CONNECT";
         $db->clientFd = $fd; //提前设置，为了出错时候可以发送给客户端
@@ -179,7 +179,7 @@ class MySQL {
             $this->connect($fd);
         } else {
             array_push($this->taskQueue, array('fd' => $fd, 'data' => $data));
-            echo "out of pool size ,check the slow query\n";
+            \Logger::log("out of pool size ,check the slow query {$data}");
         }
     }
 
@@ -249,7 +249,7 @@ class MySQL {
         if (isset($this->fd2db[$fd])) {
             $db = $this->fd2db[$fd];
             if ($db->in_tran) {//在事务里面直接断开了和proxy的链接，相应的proxy也和mysql断开链接重新连
-                echo "client close when in transaction\n";
+                \Logger::log("client close when in transaction");
                 unset($this->fd2db[$fd]);
                 $this->usedSize--;
                 $this->table->decr(MYSQL_CONN_KEY, $this->datasource);

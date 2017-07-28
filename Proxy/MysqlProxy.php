@@ -146,7 +146,7 @@ class MysqlProxy {
                     $ex = explode(";", $db);
                     $name = explode("=", $ex[0])[1];
                     if (isset($this->targetConfig[$name])) {
-                         throw new \Exception("detect duplicate dbname '{$name}'");
+                        throw new \Exception("detect duplicate dbname '{$name}'");
                     }
                     $this->targetConfig[$name] = $this->getEntry($db, $value);
                 }
@@ -259,7 +259,7 @@ class MysqlProxy {
         if ($this->clients[$fd]['status'] == self::CONNECT_SEND_AUTH) {
             $dbName = $this->protocol->getDbName($data);
             if (!isset($this->targetConfig[$dbName])) {
-                echo "db $dbName can not find\n";
+                \Logger::log("db $dbName can not find");
                 $binaryData = $this->protocol->packErrorData(10000, "db '$dbName' can not find in mysql proxy config");
                 $this->serv->send($fd, $binaryData);
                 return;
@@ -276,7 +276,7 @@ class MysqlProxy {
             $sql = $ret['sql'];
             if ($cmd !== self::COM_QUERY) {
                 if ($cmd === self::COM_PREPARE) {
-                    $binary = $this->protocol->packErrorData(ERROR_PREPARE, "proxy do not support remote prepare , (PDO example:set PDO::ATTR_EMULATE_PREPARES=true)");
+                    $binary = $this->protocol->packErrorData(MySQL::ERROR_PREPARE, "proxy do not support remote prepare , (PDO example:set PDO::ATTR_EMULATE_PREPARES=true)");
                     $this->serv->send($fd, $binary);
                     return;
                 }
@@ -315,7 +315,10 @@ class MysqlProxy {
 
     public function OnResult($binaryData, $fd) {
         if (isset($this->clients[$fd])) {//有可能已经关闭了
-            $this->serv->send($fd, $binaryData);
+            if (!$this->serv->send($fd, $binaryData)) {
+                $binary = $this->protocol->packErrorData(MySQL::ERROR_QUERY, "send to client failed,data size ".strlen($binaryData));
+                $this->serv->send($fd, $binary);
+            }
             if (RECORD_QUERY) {
                 $end = microtime(true) * 1000;
                 $logData = array(
@@ -332,7 +335,7 @@ class MysqlProxy {
     }
 
     public function OnConnect(\swoole_server $serv, $fd) {
-        echo "client connect $fd\n";
+        \Logger::log("client connect $fd");
         $this->clients[$fd]['status'] = self::CONNECT_START;
         $this->protocol->sendConnectAuth($serv, $fd);
         $this->clients[$fd]['status'] = self::CONNECT_SEND_AUTH;
@@ -346,7 +349,7 @@ class MysqlProxy {
     }
 
     public function OnClose(\swoole_server $serv, $fd) {
-        echo "client close $fd\n";
+        \Logger::log("client close $fd");
         //todo del from client
         $this->table->decr(MYSQL_CONN_KEY, "client_count");
         //remove from task queue,if possible
