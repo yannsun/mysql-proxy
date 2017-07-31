@@ -47,6 +47,8 @@ daemon=false
         default_max_conn = 20
         #每个db默认的字符集
         default_charset = "utf8"
+        #限制客户端ip 不配置就不限制
+        client_ip=["192.168.1.%","127.0.0.1"]
 
 #多组node间 dbname不能相同，如果分库后请在每个db后面加后缀，或者启动多个proxy实例，以后支持分库分表后就可以解决了
 [node2]

@@ -206,7 +206,6 @@ class MysqlProxy {
         if (!isset($value['password'])) {
             throw new \Exception("the password can not be null");
         }
-
         //init master
         if (!isset($value['master_host'])) {
             throw new \Exception("the master_host can not be null");
@@ -221,6 +220,10 @@ class MysqlProxy {
                 'charset' => $dbArr['charset'],
                 'maxconn' => $realMax
             );
+            //init allow ip
+            if (isset($value['client_ip'])) {
+                $ret['allow_ip'] = $value['client_ip'];
+            }
         }
         //init slave
         if (isset($value['slave_host'])) {
@@ -239,7 +242,6 @@ class MysqlProxy {
                     'charset' => $dbArr['charset'],
                     'maxconn' => $realMax
                 );
-
                 //init slave_weight_array
                 //weight=1
                 $weightEx = explode("=", $sEX[1]);
@@ -255,15 +257,51 @@ class MysqlProxy {
         $this->serv->start();
     }
 
+    private function checkClientIp($dbName, $fd) {
+        if (isset($this->targetConfig[$dbName]['allow_ip'])) {
+            $ipArr = $this->targetConfig[$dbName]['allow_ip'];
+            $clientIp = $this->clients[$fd]['client_ip'];
+            foreach ($ipArr as $pattern) {
+                if ($this->checkTwoIp($clientIp, $pattern)) {
+                    return true;
+                }
+            }
+            //not find
+            return false;
+        }
+        //not set return true
+        return true;
+    }
+
+    private function checkTwoIp($ip, $pattern) {
+        $ipArr = explode(".", $ip);
+        $patternArr = explode(".", $pattern);
+        for ($i = 0; $i < 4; $i++) {
+            if ($patternArr[$i] == "%") {
+                continue;
+            }
+            if ($ipArr[$i] != $patternArr[$i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     public function OnReceive(\swoole_server $serv, $fd, $from_id, $data) {
         if ($this->clients[$fd]['status'] == self::CONNECT_SEND_AUTH) {
             $dbName = $this->protocol->getDbName($data);
             if (!isset($this->targetConfig[$dbName])) {
                 \Logger::log("db $dbName can not find");
                 $binaryData = $this->protocol->packErrorData(10000, "db '$dbName' can not find in mysql proxy config");
-                $this->serv->send($fd, $binaryData);
-                return;
+                return $this->serv->send($fd, $binaryData);
             }
+
+            if (!$this->checkClientIp($dbName, $fd)) {
+                \Logger::log("the client is forbidden");
+                $binaryData = $this->protocol->packErrorData(10000, "your ip cannot access to the db ($dbName)");
+                return $this->serv->send($fd, $binaryData);
+            }
+
             $this->protocol->sendConnectOk($serv, $fd);
             $this->clients[$fd]['status'] = self::CONNECT_SEND_ESTA;
             $this->clients[$fd]['dbName'] = $dbName;
@@ -289,18 +327,7 @@ class MysqlProxy {
                 return;
             }
             $dbName = $this->clients[$fd]['dbName'];
-            $pre = substr($sql, 0, 5);
-            if (stristr($pre, "select") || stristr($pre, "show")) {
-                if (isset($this->targetConfig[$dbName]['slave'])) {
-                    shuffle($this->targetConfig[$dbName]['slave_weight_array']);
-                    $index = $this->targetConfig[$dbName]['slave_weight_array'][0];
-                    $config = $this->targetConfig[$dbName]['slave'][$index];
-                } else {//未配置从 直接走主
-                    $config = $this->targetConfig[$dbName]['master'];
-                }
-            } else {
-                $config = $this->targetConfig[$dbName]['master'];
-            }
+            $config = $this->getRealConf($dbName, $sql);
             $dataSource = $config['host'] . ":" . $config['port'] . ":" . $dbName;
             if (!isset($this->pool[$dataSource])) {
                 $pool = new MySQL($config, $this->table, array($this, 'OnResult'));
@@ -313,10 +340,27 @@ class MysqlProxy {
         }
     }
 
+    //read/write separate and salve LB
+    private function getRealConf($dbName, $sql) {
+        $pre = substr($sql, 0, 5);
+        if (stristr($pre, "select") || stristr($pre, "show")) {
+            if (isset($this->targetConfig[$dbName]['slave'])) {
+                shuffle($this->targetConfig[$dbName]['slave_weight_array']);
+                $index = $this->targetConfig[$dbName]['slave_weight_array'][0];
+                $config = $this->targetConfig[$dbName]['slave'][$index];
+            } else {//未配置从 直接走主
+                $config = $this->targetConfig[$dbName]['master'];
+            }
+        } else {
+            $config = $this->targetConfig[$dbName]['master'];
+        }
+        return $config;
+    }
+
     public function OnResult($binaryData, $fd) {
         if (isset($this->clients[$fd])) {//有可能已经关闭了
             if (!$this->serv->send($fd, $binaryData)) {
-                $binary = $this->protocol->packErrorData(MySQL::ERROR_QUERY, "send to client failed,data size ".strlen($binaryData));
+                $binary = $this->protocol->packErrorData(MySQL::ERROR_QUERY, "send to client failed,data size " . strlen($binaryData));
                 $this->serv->send($fd, $binary);
             }
             if (RECORD_QUERY) {
@@ -366,7 +410,7 @@ class MysqlProxy {
 
     public function OnWorkerStart(\swoole_server $serv, $worker_id) {
         if ($worker_id >= $serv->setting['worker_num']) {
-            $serv->tick(3000, array($this, "OnTimer"));
+            $serv->tick(3000, array($this, "OnTaskTimer"));
 //            $serv->tick(5000, array($this, "OnPing"));
             swoole_set_process_name("mysql proxy task");
             $result = swoole_get_local_ip();
@@ -374,12 +418,21 @@ class MysqlProxy {
             $this->localip = $first_ip;
         } else {
             swoole_set_process_name("mysql proxy worker");
+//            $serv->tick(1000, array($this, "OnWorkerTimer"));//自动剔除/恢复 故障从库
+        }
+    }
+
+    public function OnWorkerTimer($serv) {
+        foreach ($this->targetConfig as $configEntry) {
+            if (isset($configEntry['slave'])) {
+                var_dump($configEntry['slave']);
+            }
         }
     }
 
 //____________________________________________________task worker__________________________________________________
     //task callback 上报连接数
-    public function OnTimer($serv) {
+    public function OnTaskTimer($serv) {
         $count = $this->table->get(MYSQL_CONN_KEY);
         if (empty($this->redis)) {
             $client = new \redis;
