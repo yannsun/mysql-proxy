@@ -17,6 +17,7 @@ class MysqlProxy {
     private $redis = null;
     private $redisHost = NULL;
     private $redisPort = NULL;
+    private $RECORD_QUERY = false;
     /*
      * PROXY的ip 用于proxy集群上报加到key里面
      */
@@ -45,6 +46,7 @@ class MysqlProxy {
     const COM_QUIT = 1;
     const COM_PREPARE = 22;
 
+  
     private $targetConfig = array();
 
     /**
@@ -84,7 +86,7 @@ class MysqlProxy {
     }
 
     public function init() {
-        $this->getConfig();
+        $this->getConfigConst();
         $this->serv = new \swoole_server('0.0.0.0', PORT, SWOOLE_BASE, SWOOLE_SOCK_TCP);
         $this->serv->set([
             'worker_num' => WORKER_NUM,
@@ -111,15 +113,27 @@ class MysqlProxy {
         });
     }
 
-    public function getConfig() {
+    private function getConfigConst() {
+        $array = \Yosymfony\Toml\Toml::Parse(__DIR__ . '/../config.toml');
+        $common = $array['common'];
+
+        define("REDIS_SLOW", $common['redis_slow']);
+        define("REDIS_BIG", $common['redis_big']);
+
+        define("MYSQL_CONN_KEY", $common['mysql_conn_key']);
+        define("MYSQL_CONN_REDIS_KEY", $common['mysql_conn_redis_key']);
+
+        define("WORKER_NUM", $common['worker_num']);
+        define("TASK_WORKER_NUM", $common['task_worker_num']);
+        define("SWOOLE_LOG", $common['swoole_log']);
+        define("DAEMON", $common['daemon']);
+        define("PORT", $common['port']);
+    }
+
+    private function getConfigNode() {
 //        $env = get_cfg_var('env.name') ? get_cfg_var('env.name') : 'product';
 //        $jsonConfig = \CloudConfig::get("platform/proxy_shequ", "test");
 //        $config = json_decode($jsonConfig, true);
-        /*
-         * 错误码定义
-         */
-        $ret = [];
-
         $array = \Yosymfony\Toml\Toml::Parse(__DIR__ . '/../config.toml');
         foreach ($array as $key => $value) {
             if ($key == "common") {
@@ -128,20 +142,9 @@ class MysqlProxy {
                 $this->redisHost = $ex[0];
                 $this->redisPort = $ex[1];
 
-                define("RECORD_QUERY", $value['record_query']);
-                define("REDIS_SLOW", $value['redis_slow']);
-                define("REDIS_BIG", $value['redis_big']);
-
-                define("MYSQL_CONN_KEY", $value['mysql_conn_key']);
-                define("MYSQL_CONN_REDIS_KEY", $value['mysql_conn_redis_key']);
-
-                define("WORKER_NUM", $value['worker_num']);
-                define("TASK_WORKER_NUM", $value['task_worker_num']);
-                define("SWOOLE_LOG", $value['swoole_log']);
-                define("DAEMON", $value['daemon']);
-                define("PORT", $value['port']);
+                self::$RECORD_QUERY = $value['record_query'];
             } else {//nodes
-                $node = $key;
+//                $node = $key;
                 foreach ($value['db'] as $db) {
                     $ex = explode(";", $db);
                     $name = explode("=", $ex[0])[1];
@@ -363,7 +366,7 @@ class MysqlProxy {
                 $binary = $this->protocol->packErrorData(MySQL::ERROR_QUERY, "send to client failed,data size " . strlen($binaryData));
                 $this->serv->send($fd, $binary);
             }
-            if (RECORD_QUERY) {
+            if (self::$RECORD_QUERY) {
                 $end = microtime(true) * 1000;
                 $logData = array(
                     'start' => $this->clients[$fd]['start'],
@@ -409,6 +412,7 @@ class MysqlProxy {
 //    }
 
     public function OnWorkerStart(\swoole_server $serv, $worker_id) {
+        $this->getConfigNode();
         if ($worker_id >= $serv->setting['worker_num']) {
             $serv->tick(3000, array($this, "OnTaskTimer"));
 //            $serv->tick(5000, array($this, "OnPing"));
