@@ -87,6 +87,7 @@ class MysqlProxy {
 
     public function init() {
         $this->getConfigConst();
+        $this->getConfigNode();
         $this->serv = new \swoole_server('0.0.0.0', PORT, SWOOLE_BASE, SWOOLE_SOCK_TCP);
         $this->serv->set([
             'worker_num' => WORKER_NUM,
@@ -142,15 +143,15 @@ class MysqlProxy {
                 $this->redisHost = $ex[0];
                 $this->redisPort = $ex[1];
 
-                self::$RECORD_QUERY = $value['record_query'];
+                $this->RECORD_QUERY = $value['record_query'];
             } else {//nodes
 //                $node = $key;
                 foreach ($value['db'] as $db) {
                     $ex = explode(";", $db);
                     $name = explode("=", $ex[0])[1];
-                    if (isset($this->targetConfig[$name])) {
-                        throw new \Exception("detect duplicate dbname '{$name}'");
-                    }
+//                    if (isset($this->targetConfig[$name])) {
+//                        throw new \Exception("detect duplicate dbname '{$name}'");
+//                    }
                     $this->targetConfig[$name] = $this->getEntry($db, $value);
                 }
             }
@@ -366,7 +367,7 @@ class MysqlProxy {
                 $binary = $this->protocol->packErrorData(MySQL::ERROR_QUERY, "send to client failed,data size " . strlen($binaryData));
                 $this->serv->send($fd, $binary);
             }
-            if (self::$RECORD_QUERY) {
+            if ($this->RECORD_QUERY) {
                 $end = microtime(true) * 1000;
                 $logData = array(
                     'start' => $this->clients[$fd]['start'],
