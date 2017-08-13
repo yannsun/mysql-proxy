@@ -50,6 +50,7 @@
 > 注意 extension = mysql-proxy.so 要在 extension = swoole.so 后面加载
 
 **5.  配置 config.toml**
+
 **6.  启动 php proxystart.php**
 
 ## 说明
