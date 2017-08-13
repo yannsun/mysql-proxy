@@ -14,7 +14,7 @@
 * 然后cd到cpp_module/PHP-X，安装phpx，参考`https://github.com/swoole/PHP-X`（这一步只是安装libphpx.so这个动态链接库，注意此so文件不是一个php扩展）
 * 安装最新版本的 `swoole-src` 的1.9分支代码(>=1.9.17)
 * 安装 mysql-proxy 扩展，cd到cpp_module，`make && make install`（这一步会生成一个mysql_proxy.so文件，这个so文件依赖第二步生成的libphpx.so这个库，这个mysql_proxy.so才是php的扩展）
-* 配置 php.ini 载入mysql-proxy.so
+* 配置 php.ini 载入mysql-proxy.so，同时保证swoole.so顺序比mysql-proxy.so靠前
 * 配置 config.toml
 * 启动 php proxystart.php 
 
