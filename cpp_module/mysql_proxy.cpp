@@ -326,7 +326,7 @@ PHPX_PURE_METHOD(MysqlProtocol, getResp) {
     } else if (command == -1) {//error
         Array map(retval);
         map.set("cmd", (long) command);
-        //        map.set("sql", buf + 5);
+//        printf("error no %d\n",*(short*)(buf+5));
     } else {
         Array map(retval);
         map.set("cmd", (long) command);
@@ -735,6 +735,25 @@ PHPX_PURE_METHOD(MysqlProtocol, responseAuth) {
     retval = tmp_str;
 }
 
+PHPX_PURE_METHOD(MysqlProtocol, packPingData) {
+   
+    swString *sql_data_buffer = swString_new(SW_BUFFER_SIZE_STD);
+    if (!sql_data_buffer) {
+        swoole_error_log(SW_LOG_ERROR, SW_ERROR_MALLOC_FAIL, "malloc[0] failed.");
+        retval = 0;
+    }
+    
+    sql_data_buffer->str[3] = 0;//number
+    sql_data_buffer->str[4] = 0x0E;//cmd ping
+    
+    mysql_pack_length(1, sql_data_buffer->str);//leng is 0
+    
+    string tmp_str = string(sql_data_buffer->str, 5);
+    retval = tmp_str;
+    swString_free(sql_data_buffer);
+
+}
+
 PHPX_PURE_METHOD(MysqlProtocol, packOkData) {
     //void packOkData(Object &_this, Args &args, Variant &retval) {
     Variant effect_rows = args[0];
@@ -1066,6 +1085,11 @@ PHPX_EXTENSION() {
          * 发送数组  selelct
          */
         c->addMethod("packResultData",  packResultData);
+        
+           /**
+         * 发送 ping
+         */
+        c->addMethod("packPingData",  packPingData);
 
         extension->registerClass(c);
 
