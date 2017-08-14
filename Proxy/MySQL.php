@@ -159,6 +159,7 @@ class MySQL {
         $db->in_tran = 0;
         $db->connect($this->config['host'], $this->config['port']);
     }
+    
 
     public function query($data, $fd) {
         if (isset($this->fd2db[$fd])) {

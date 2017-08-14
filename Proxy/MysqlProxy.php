@@ -46,7 +46,6 @@ class MysqlProxy {
     const COM_QUIT = 1;
     const COM_PREPARE = 22;
 
-  
     private $targetConfig = array();
 
     /**
@@ -362,6 +361,8 @@ class MysqlProxy {
     }
 
     public function OnResult($binaryData, $fd) {
+        if ($fd == 0) {//ping的返回结果 todo 从库自动恢复 目前只维护连接
+        }
         if (isset($this->clients[$fd])) {//有可能已经关闭了
             if (!$this->serv->send($fd, $binaryData)) {
                 $binary = $this->protocol->packErrorData(MySQL::ERROR_QUERY, "send to client failed,data size " . strlen($binaryData));
@@ -423,14 +424,28 @@ class MysqlProxy {
             $this->localip = $first_ip;
         } else {
             swoole_set_process_name("mysql proxy worker");
-//            $serv->tick(1000, array($this, "OnWorkerTimer"));//自动剔除/恢复 故障从库
+            $serv->tick(3000, array($this, "OnWorkerTimer")); //自动剔除/恢复 故障从库 && 维持连接
+        }
+    }
+
+    private function sendPing($config) {
+        $dataSource = $config['host'] . ":" . $config['port'] . ":" . $config['database'];
+        if (isset($this->pool[$dataSource])) {
+            $data = $this->protocol->packPingData();
+            $this->pool[$dataSource]->query($data, 0); //当前服务的客户端fd为0  证明是proxy主动发出的ping
         }
     }
 
     public function OnWorkerTimer($serv) {
         foreach ($this->targetConfig as $configEntry) {
+            if (isset($configEntry['master'])) {
+                $config = $configEntry['master'];
+                $this->sendPing($config);
+            }
             if (isset($configEntry['slave'])) {
-                var_dump($configEntry['slave']);
+                foreach ($configEntry['slave'] as $config) {
+                    $this->sendPing($config);
+                }
             }
         }
     }
