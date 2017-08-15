@@ -4,7 +4,8 @@ namespace Proxy;
 
 //require '/data/www/public/sdk/autoload.php';
 
-class MysqlProxy {
+class MysqlProxy
+{
 
     /**
      * @var \swoole_server
@@ -17,6 +18,7 @@ class MysqlProxy {
     private $redis = null;
     private $redisHost = NULL;
     private $redisPort = NULL;
+    private $redisAuth = NULL;
     private $RECORD_QUERY = false;
     /*
      * PROXY的ip 用于proxy集群上报加到key里面
@@ -63,7 +65,8 @@ class MysqlProxy {
      */
     private $clients = [];
 
-    private function createTable() {
+    private function createTable()
+    {
         $this->table = new \swoole_table(1024);
         $arr = [];
         foreach ($this->targetConfig as $dbname => $config) {
@@ -84,19 +87,21 @@ class MysqlProxy {
         // $this->table->set(MYSQL_CONN_KEY, $arr);
     }
 
-    public function init() {
+    public function init()
+    {
         $this->getConfigConst();
         $this->getConfigNode();
         $this->serv = new \swoole_server('0.0.0.0', PORT, SWOOLE_BASE, SWOOLE_SOCK_TCP);
         $this->serv->set([
-            'worker_num' => WORKER_NUM,
-            'task_worker_num' => TASK_WORKER_NUM,
-            'open_length_check' => 1,
-            'open_tcp_nodelay' => true,
-            'log_file' => SWOOLE_LOG,
-            'daemonize' => DAEMON,
-            'package_length_func' => 'mysql_proxy_get_length'
-                ]
+                'worker_num' => WORKER_NUM,
+                'task_worker_num' => TASK_WORKER_NUM,
+                'open_length_check' => 1,
+                'open_tcp_nodelay' => true,
+                'log_file' => ROOT_PATH . '/logs/' . SWOOLE_LOG,
+                'pid_file' => ROOT_PATH . '/logs/' . SWOOLE_PID,
+                'daemonize' => DAEMON,
+                'package_length_func' => 'mysql_proxy_get_length'
+            ]
         );
         $this->createTable();
         $this->protocol = new \MysqlProtocol();
@@ -108,12 +113,13 @@ class MysqlProxy {
         $this->serv->on('workerStart', array($this, 'OnWorkerStart'));
         $this->serv->on('task', array($this, 'OnTask'));
 //        $this->serv->on('start', array($this, 'OnStart'));
-        $this->serv->on('finish', function() {
-            
+        $this->serv->on('finish', function () {
+
         });
     }
 
-    private function getConfigConst() {
+    private function getConfigConst()
+    {
         $array = \Yosymfony\Toml\Toml::Parse(__DIR__ . '/../config.toml');
         $common = $array['common'];
 
@@ -126,11 +132,13 @@ class MysqlProxy {
         define("WORKER_NUM", $common['worker_num']);
         define("TASK_WORKER_NUM", $common['task_worker_num']);
         define("SWOOLE_LOG", $common['swoole_log']);
+        define("SWOOLE_PID", $common['swoole_pid']);
         define("DAEMON", $common['daemon']);
         define("PORT", $common['port']);
     }
 
-    private function getConfigNode() {
+    private function getConfigNode()
+    {
 //        $env = get_cfg_var('env.name') ? get_cfg_var('env.name') : 'product';
 //        $jsonConfig = \CloudConfig::get("platform/proxy_shequ", "test");
 //        $config = json_decode($jsonConfig, true);
@@ -141,6 +149,8 @@ class MysqlProxy {
                 $ex = explode(":", $value['redis_host']);
                 $this->redisHost = $ex[0];
                 $this->redisPort = $ex[1];
+
+                $this->redisAuth = $value['redis_auth'];
 
                 $this->RECORD_QUERY = $value['record_query'];
             } else {//nodes
@@ -157,11 +167,31 @@ class MysqlProxy {
         }
     }
 
+    /**
+     * 连接redis 增加redis密码认证
+     */
+    private function connectRedis()
+    {
+        if (empty($this->redis)) {
+            $client = new \redis;
+            if ($client->pconnect($this->redisHost, $this->redisPort)) {
+                //判断是否设置密码
+                if (!empty($this->redisAuth)) {
+                    $client->auth($this->redisAuth);
+                }
+                $this->redis = $client;
+            } else {
+                return;
+            }
+        }
+    }
+
     /*
      * 获取每个db维度的配置
      */
 
-    private function getEntry($db, $value) {
+    private function getEntry($db, $value)
+    {
         $dbEx = explode(";", $db);
         // parse `db = ["name=db1;charset=gbk","name=db2;max_conn=100","name=db3"] `
         $dbArr = $ret = [];
@@ -198,7 +228,7 @@ class MysqlProxy {
             throw new \Exception("the maxconn can not be null");
         } else {
             //计算每个worker分多少连接
-            $realMax = (int) ceil($dbArr['maxconn'] / WORKER_NUM);
+            $realMax = (int)ceil($dbArr['maxconn'] / WORKER_NUM);
         }
         if (!isset($dbArr['charset'])) {
             throw new \Exception("the charset can not be null");
@@ -248,7 +278,7 @@ class MysqlProxy {
                 //init slave_weight_array
                 //weight=1
                 $weightEx = explode("=", $sEX[1]);
-                $weight = (int) $weightEx[1];
+                $weight = (int)$weightEx[1];
                 $ret['slave_weight_array'] = array_pad($ret['slave_weight_array'], count($ret['slave_weight_array']) + $weight, $index);
                 $index++;
             }
@@ -256,11 +286,13 @@ class MysqlProxy {
         return $ret;
     }
 
-    public function start() {
+    public function start()
+    {
         $this->serv->start();
     }
 
-    private function checkClientIp($dbName, $fd) {
+    private function checkClientIp($dbName, $fd)
+    {
         if (isset($this->targetConfig[$dbName]['allow_ip'])) {
             $ipArr = $this->targetConfig[$dbName]['allow_ip'];
             $clientIp = $this->clients[$fd]['client_ip'];
@@ -276,7 +308,8 @@ class MysqlProxy {
         return true;
     }
 
-    private function checkTwoIp($ip, $pattern) {
+    private function checkTwoIp($ip, $pattern)
+    {
         $ipArr = explode(".", $ip);
         $patternArr = explode(".", $pattern);
         for ($i = 0; $i < 4; $i++) {
@@ -290,7 +323,8 @@ class MysqlProxy {
         return true;
     }
 
-    public function OnReceive(\swoole_server $serv, $fd, $from_id, $data) {
+    public function OnReceive(\swoole_server $serv, $fd, $from_id, $data)
+    {
         if ($this->clients[$fd]['status'] == self::CONNECT_SEND_AUTH) {
             $dbName = $this->protocol->getDbName($data);
             if (!isset($this->targetConfig[$dbName])) {
@@ -344,7 +378,8 @@ class MysqlProxy {
     }
 
     //read/write separate and salve LB
-    private function getRealConf($dbName, $sql) {
+    private function getRealConf($dbName, $sql)
+    {
         $pre = substr($sql, 0, 5);
         if (stristr($pre, "select") || stristr($pre, "show")) {
             if (isset($this->targetConfig[$dbName]['slave'])) {
@@ -360,7 +395,8 @@ class MysqlProxy {
         return $config;
     }
 
-    public function OnResult($binaryData, $fd) {
+    public function OnResult($binaryData, $fd)
+    {
         if ($fd == 0) {//ping的返回结果 todo 从库自动恢复 目前只维护连接
         }
         if (isset($this->clients[$fd])) {//有可能已经关闭了
@@ -383,7 +419,8 @@ class MysqlProxy {
         }
     }
 
-    public function OnConnect(\swoole_server $serv, $fd) {
+    public function OnConnect(\swoole_server $serv, $fd)
+    {
         \Logger::log("client connect $fd");
         $this->clients[$fd]['status'] = self::CONNECT_START;
         $this->protocol->sendConnectAuth($serv, $fd);
@@ -397,7 +434,8 @@ class MysqlProxy {
         $this->table->incr(MYSQL_CONN_KEY, "client_count");
     }
 
-    public function OnClose(\swoole_server $serv, $fd) {
+    public function OnClose(\swoole_server $serv, $fd)
+    {
         \Logger::log("client close $fd");
         //todo del from client
         $this->table->decr(MYSQL_CONN_KEY, "client_count");
@@ -413,7 +451,8 @@ class MysqlProxy {
 //        
 //    }
 
-    public function OnWorkerStart(\swoole_server $serv, $worker_id) {
+    public function OnWorkerStart(\swoole_server $serv, $worker_id)
+    {
         $this->getConfigNode();
         if ($worker_id >= $serv->setting['worker_num']) {
             $serv->tick(3000, array($this, "OnTaskTimer"));
@@ -428,7 +467,8 @@ class MysqlProxy {
         }
     }
 
-    private function sendPing($config) {
+    private function sendPing($config)
+    {
         $dataSource = $config['host'] . ":" . $config['port'] . ":" . $config['database'];
         if (isset($this->pool[$dataSource])) {
             $data = $this->protocol->packPingData();
@@ -436,7 +476,8 @@ class MysqlProxy {
         }
     }
 
-    public function OnWorkerTimer($serv) {
+    public function OnWorkerTimer($serv)
+    {
         foreach ($this->targetConfig as $configEntry) {
             if (isset($configEntry['master'])) {
                 $config = $configEntry['master'];
@@ -452,14 +493,10 @@ class MysqlProxy {
 
 //____________________________________________________task worker__________________________________________________
     //task callback 上报连接数
-    public function OnTaskTimer($serv) {
+    public function OnTaskTimer($serv)
+    {
         $count = $this->table->get(MYSQL_CONN_KEY);
-        if (empty($this->redis)) {
-            $client = new \redis;
-            if ($client->pconnect($this->redisHost, $this->redisPort)) {
-                $this->redis = $client;
-            }
-        }
+        $this->connectRedis();
         /*
          * count layout
          *                                                hash
@@ -474,15 +511,9 @@ class MysqlProxy {
         $this->redis->expire(MYSQL_CONN_REDIS_KEY, 60);
     }
 
-    public function OnTask($serv, $task_id, $from_id, $data) {
-        if (empty($this->redis)) {
-            $client = new \redis;
-            if ($client->pconnect($this->redisHost, $this->redisPort)) {
-                $this->redis = $client;
-            } else {
-                return;
-            }
-        }
+    public function OnTask($serv, $task_id, $from_id, $data)
+    {
+        $this->connectRedis();
         $date = date("Y-m-d");
         $expireFlag = false;
         if (!$this->redis->exists(REDIS_SLOW . $date)) {
