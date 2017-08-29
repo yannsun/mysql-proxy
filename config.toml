@@ -6,9 +6,13 @@ record_query = false
 #记录客户端sql查询的redis机器
 redis_host = "127.0.0.1:6379"
 
+#redis auth
+redis_auth = ""
+
 #redis key
 redis_slow ="sqlslow"
 redis_big="sqlbig"
+
 
 #swoole table的key
 mysql_conn_key="proxy_conn_key"
@@ -20,6 +24,7 @@ worker_num=5
 task_worker_num=1
 #swoole server的 日志
 swoole_log="/tmp/sqlproxy.log"
+
 #监听端口
 port = 9536
 #是否守护进程方式运行

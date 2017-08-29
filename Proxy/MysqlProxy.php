@@ -17,6 +17,7 @@ class MysqlProxy {
     private $redis = null;
     private $redisHost = NULL;
     private $redisPort = NULL;
+    private $redisAuth = NULL;
     private $RECORD_QUERY = false;
     /*
      * PROXY的ip 用于proxy集群上报加到key里面
@@ -108,7 +109,7 @@ class MysqlProxy {
         $this->serv->on('workerStart', array($this, 'OnWorkerStart'));
         $this->serv->on('task', array($this, 'OnTask'));
 //        $this->serv->on('start', array($this, 'OnStart'));
-        $this->serv->on('finish', function() {
+        $this->serv->on('finish', function () {
             
         });
     }
@@ -142,6 +143,8 @@ class MysqlProxy {
                 $this->redisHost = $ex[0];
                 $this->redisPort = $ex[1];
 
+                $this->redisAuth = $value['redis_auth'];
+
                 $this->RECORD_QUERY = $value['record_query'];
             } else {//nodes
 //                $node = $key;
@@ -153,6 +156,24 @@ class MysqlProxy {
 //                    }
                     $this->targetConfig[$name] = $this->getEntry($db, $value);
                 }
+            }
+        }
+    }
+
+    /**
+     * 连接redis 增加redis密码认证
+     */
+    private function connectRedis() {
+        if (empty($this->redis)) {
+            $client = new \redis;
+            if ($client->pconnect($this->redisHost, $this->redisPort)) {
+                //判断是否设置密码
+                if (!empty($this->redisAuth)) {
+                    $client->auth($this->redisAuth);
+                }
+                $this->redis = $client;
+            } else {
+                return;
             }
         }
     }
@@ -345,7 +366,7 @@ class MysqlProxy {
             } else {//其他走主库 包含/*master*/
                 $config = $this->targetConfig[$dbName]['master'];
             }
-            
+
             $dataSource = $config['host'] . ":" . $config['port'] . ":" . $dbName;
             if (!isset($this->pool[$dataSource])) {
                 $pool = new MySQL($config, $this->table, array($this, 'OnResult'));
@@ -382,6 +403,7 @@ class MysqlProxy {
     }
 
     public function OnConnect(\swoole_server $serv, $fd) {
+        \Logger::log("client connect $fd");
         $this->clients[$fd]['status'] = self::CONNECT_START;
         $this->protocol->sendConnectAuth($serv, $fd);
         $this->clients[$fd]['status'] = self::CONNECT_SEND_AUTH;
@@ -395,6 +417,7 @@ class MysqlProxy {
     }
 
     public function OnClose(\swoole_server $serv, $fd) {
+        \Logger::log("client close $fd");
         //todo del from client
         $this->table->decr(MYSQL_CONN_KEY, "client_count");
         //remove from task queue,if possible
@@ -450,12 +473,7 @@ class MysqlProxy {
     //task callback 上报连接数
     public function OnTaskTimer($serv) {
         $count = $this->table->get(MYSQL_CONN_KEY);
-        if (empty($this->redis)) {
-            $client = new \redis;
-            if ($client->pconnect($this->redisHost, $this->redisPort)) {
-                $this->redis = $client;
-            }
-        }
+        $this->connectRedis();
         /*
          * count layout
          *                                                hash
@@ -471,14 +489,7 @@ class MysqlProxy {
     }
 
     public function OnTask($serv, $task_id, $from_id, $data) {
-        if (empty($this->redis)) {
-            $client = new \redis;
-            if ($client->pconnect($this->redisHost, $this->redisPort)) {
-                $this->redis = $client;
-            } else {
-                return;
-            }
-        }
+        $this->connectRedis();
         $date = date("Y-m-d");
         $expireFlag = false;
         if (!$this->redis->exists(REDIS_SLOW . $date)) {
