@@ -345,7 +345,8 @@ class MysqlProxy {
 
     //read/write separate and salve LB
     private function getRealConf($dbName, $sql) {
-        $pre = substr($sql, 0, 5);
+        $pre = substr($sql, 0, 6);
+        \Logger::log("sql $dbName $sql");
         if (stristr($pre, "select") || stristr($pre, "show")) {
             if (isset($this->targetConfig[$dbName]['slave'])) {
                 shuffle($this->targetConfig[$dbName]['slave_weight_array']);
@@ -384,7 +385,6 @@ class MysqlProxy {
     }
 
     public function OnConnect(\swoole_server $serv, $fd) {
-        \Logger::log("client connect $fd");
         $this->clients[$fd]['status'] = self::CONNECT_START;
         $this->protocol->sendConnectAuth($serv, $fd);
         $this->clients[$fd]['status'] = self::CONNECT_SEND_AUTH;
@@ -398,7 +398,6 @@ class MysqlProxy {
     }
 
     public function OnClose(\swoole_server $serv, $fd) {
-        \Logger::log("client close $fd");
         //todo del from client
         $this->table->decr(MYSQL_CONN_KEY, "client_count");
         //remove from task queue,if possible
