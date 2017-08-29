@@ -318,8 +318,7 @@ class MysqlProxy {
             if ($cmd !== self::COM_QUERY) {
                 if ($cmd === self::COM_PREPARE) {
                     $binary = $this->protocol->packErrorData(MySQL::ERROR_PREPARE, "proxy do not support remote prepare , (PDO example:set PDO::ATTR_EMULATE_PREPARES=true)");
-                    $this->serv->send($fd, $binary);
-                    return;
+                    return $this->serv->send($fd, $binary);
                 }
                 if ($cmd === self::COM_QUIT) {//直接关闭和client链接
                     $serv->close($fd, true);
@@ -329,8 +328,24 @@ class MysqlProxy {
                 $this->serv->send($fd, $binary);
                 return;
             }
+
             $dbName = $this->clients[$fd]['dbName'];
-            $config = $this->getRealConf($dbName, $sql);
+            $pre = substr($sql, 0, 10);
+            if (stristr($pre, "SET NAMES")) {
+                $binary = $this->protocol->packOkData(0, 0);
+                return $this->serv->send($fd, $binary);
+            } elseif (stristr($pre, "select")) {
+                if (isset($this->targetConfig[$dbName]['slave'])) {
+                    shuffle($this->targetConfig[$dbName]['slave_weight_array']);
+                    $index = $this->targetConfig[$dbName]['slave_weight_array'][0];
+                    $config = $this->targetConfig[$dbName]['slave'][$index];
+                } else {//未配置从 直接走主
+                    $config = $this->targetConfig[$dbName]['master'];
+                }
+            } else {//其他走主库 包含/*master*/
+                $config = $this->targetConfig[$dbName]['master'];
+            }
+            
             $dataSource = $config['host'] . ":" . $config['port'] . ":" . $dbName;
             if (!isset($this->pool[$dataSource])) {
                 $pool = new MySQL($config, $this->table, array($this, 'OnResult'));
@@ -341,24 +356,6 @@ class MysqlProxy {
             $this->clients[$fd]['datasource'] = $dataSource;
             $this->pool[$dataSource]->query($data, $fd);
         }
-    }
-
-    //read/write separate and salve LB
-    private function getRealConf($dbName, $sql) {
-        $pre = substr($sql, 0, 6);
-        \Logger::log("sql $dbName $sql");
-        if (stristr($pre, "select") || stristr($pre, "show")) {
-            if (isset($this->targetConfig[$dbName]['slave'])) {
-                shuffle($this->targetConfig[$dbName]['slave_weight_array']);
-                $index = $this->targetConfig[$dbName]['slave_weight_array'][0];
-                $config = $this->targetConfig[$dbName]['slave'][$index];
-            } else {//未配置从 直接走主
-                $config = $this->targetConfig[$dbName]['master'];
-            }
-        } else {
-            $config = $this->targetConfig[$dbName]['master'];
-        }
-        return $config;
     }
 
     public function OnResult($binaryData, $fd) {
