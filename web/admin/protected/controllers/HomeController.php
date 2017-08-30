@@ -16,19 +16,19 @@ class HomeController extends Controller
             'slowTop' => [],
             'bigTop'  => []
         ];
-        $slowArr = $redis->zRevRange(REDIS_SLOW . $date, 0, 100);//汇总所有的proxy
+        $slowArr = $redis->zRevRange("sqlslow" . $date, 0, 100);//汇总所有的proxy
         foreach ($slowArr as $k => $ser)
         {
             $ret['slowTop'][] = swoole_serialize::unpack($ser);
         }
-        $bigArr = $redis->zRevRange(REDIS_BIG . $date, 0, 100);//汇总所有的proxy
+        $bigArr = $redis->zRevRange("sqlbig" . $date, 0, 100);//汇总所有的proxy
         foreach ($bigArr as $k => $ser)
         {
             $ret['bigTop'][] = swoole_serialize::unpack($ser);
         }
 
 
-        $conns = $redis->hGetAll(MYSQL_CONN_REDIS_KEY);//proxy维度 不汇总
+        $conns = $redis->hGetAll("proxy_connection");//proxy维度 不汇总
         $tarArr = array();
         foreach ($conns as $proxyip => $ser)
         {
