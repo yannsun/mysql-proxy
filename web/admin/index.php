@@ -1,5 +1,4 @@
 <?php
-require __DIR__."/../../config.php";
 $env = get_cfg_var('env.name') ? get_cfg_var('env.name') : 'product';
 //date_default_timezone_set('Asia/Shanghai');
 //config
