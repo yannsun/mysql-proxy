@@ -30,6 +30,10 @@ class MySQL {
      * 排队的请求
      */
     public $taskQueue = array();
+    /*
+     * 是否正在ping 方式主从相同数据源同时ping
+     */
+    public $pinging = false;
 
     /**
      * @var \swoole_table 用于存储连接数汇总信息
@@ -162,7 +166,7 @@ class MySQL {
     
 
     public function query($data, $fd) {
-        if (isset($this->fd2db[$fd])) {
+        if (isset($this->fd2db[$fd])) {//已经分配了连接
             $this->fd2db[$fd]->send($data);
             return;
         }

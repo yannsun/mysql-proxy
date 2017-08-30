@@ -381,6 +381,7 @@ class MysqlProxy {
 
     public function OnResult($binaryData, $fd) {
         if ($fd == 0) {//ping的返回结果 todo 从库自动恢复 目前只维护连接
+            echo "got\n";
         }
         if (isset($this->clients[$fd])) {//有可能已经关闭了
             if (!$this->serv->send($fd, $binaryData)) {
@@ -403,7 +404,7 @@ class MysqlProxy {
     }
 
     public function OnConnect(\swoole_server $serv, $fd) {
-        \Logger::log("client connect $fd");
+//        \Logger::log("client connect $fd");
         $this->clients[$fd]['status'] = self::CONNECT_START;
         $this->protocol->sendConnectAuth($serv, $fd);
         $this->clients[$fd]['status'] = self::CONNECT_SEND_AUTH;
@@ -417,7 +418,7 @@ class MysqlProxy {
     }
 
     public function OnClose(\swoole_server $serv, $fd) {
-        \Logger::log("client close $fd");
+//        \Logger::log("client close $fd");
         //todo del from client
         $this->table->decr(MYSQL_CONN_KEY, "client_count");
         //remove from task queue,if possible
@@ -435,7 +436,7 @@ class MysqlProxy {
     public function OnWorkerStart(\swoole_server $serv, $worker_id) {
         $this->getConfigNode();
         if ($worker_id >= $serv->setting['worker_num']) {
-            $serv->tick(3000, array($this, "OnTaskTimer"));
+            $serv->tick(5000, array($this, "OnTaskTimer"));
 //            $serv->tick(5000, array($this, "OnPing"));
             swoole_set_process_name("mysql proxy task");
             $result = swoole_get_local_ip();
@@ -443,7 +444,7 @@ class MysqlProxy {
             $this->localip = $first_ip;
         } else {
             swoole_set_process_name("mysql proxy worker");
-            $serv->tick(3000, array($this, "OnWorkerTimer")); //自动剔除/恢复 故障从库 && 维持连接
+//            $serv->tick(3000, array($this, "OnWorkerTimer")); //自动剔除/恢复 故障从库 && 维持连接
         }
     }
 
@@ -451,6 +452,7 @@ class MysqlProxy {
         $dataSource = $config['host'] . ":" . $config['port'] . ":" . $config['database'];
         if (isset($this->pool[$dataSource])) {
             $data = $this->protocol->packPingData();
+            $this->pool[$dataSource]->pinging = true;
             $this->pool[$dataSource]->query($data, 0); //当前服务的客户端fd为0  证明是proxy主动发出的ping
         }
     }
@@ -470,7 +472,7 @@ class MysqlProxy {
     }
 
 //____________________________________________________task worker__________________________________________________
-    //task callback 上报连接数
+    //task callback 上报连接数 && 清理redis
     public function OnTaskTimer($serv) {
         $count = $this->table->get(MYSQL_CONN_KEY);
         $this->connectRedis();
@@ -486,6 +488,11 @@ class MysqlProxy {
         $ser = \swoole_serialize::pack($count);
         $this->redis->hSet(MYSQL_CONN_REDIS_KEY, $this->localip, $ser);
         $this->redis->expire(MYSQL_CONN_REDIS_KEY, 60);
+
+        $date = date("Y-m-d");
+        $this->redis->zRemRangeByRank(REDIS_SLOW . $date, 100, -1); //删除排名100后的所有成员 返回删除数用于计算qps
+        $qpsCount = (int)$this->redis->zRemRangeByRank(REDIS_BIG . $date, 100, -1);
+        $this->redis->set("proxy_qps", $qpsCount / 5);
     }
 
     public function OnTask($serv, $task_id, $from_id, $data) {
