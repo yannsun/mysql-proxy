@@ -490,9 +490,13 @@ class MysqlProxy {
         $this->redis->expire(MYSQL_CONN_REDIS_KEY, 60);
 
         $date = date("Y-m-d");
-        $this->redis->zRemRangeByRank(REDIS_SLOW . $date, 100, -1); //删除排名100后的所有成员 返回删除数用于计算qps
-        $qpsCount = (int)$this->redis->zRemRangeByRank(REDIS_BIG . $date, 100, -1);
-        $this->redis->set("proxy_qps", $qpsCount / 5);
+
+        $total = $this->redis->zCard(REDIS_SLOW . $date);
+        if ($total > 100) {
+            $this->redis->zRemRangeByRank(REDIS_SLOW . $date, 0, -100); //删除排名100后的所有成员 返回删除数用于计算qps
+            $qpsCount = (int) $this->redis->zRemRangeByRank(REDIS_BIG . $date, 0, -100);
+            $this->redis->set("proxy_qps", $qpsCount / 5);
+        }
     }
 
     public function OnTask($serv, $task_id, $from_id, $data) {
