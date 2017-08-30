@@ -39,7 +39,7 @@ class HomeController extends Controller
 //        {
 //            $data[] = swoole_serialize::unpack($value);
 //        }
-        $ret['qps'] = 0;
+        $ret['qps'] = (int)$redis->get("proxy_qps");
         $ret['connCount'] = $tarArr;
         $this->render('/home/index', $ret);
     }
