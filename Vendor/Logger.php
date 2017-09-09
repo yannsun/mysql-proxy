@@ -10,7 +10,7 @@ class Logger {
 
     public static function log($data) {
         $time = date("Y-m-d H:i:s");
-        echo $time . " : '" . $data . "'\n";
+        echo $time ."(". posix_getpid().") : '" . $data . "'\n";
     }
 
 }

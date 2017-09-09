@@ -5,14 +5,12 @@ namespace Proxy;
 class MySQL {
 
     const DEFAULT_PORT = 3306;
-    
     const ERROR_CONN = 10001;
     const ERROR_AUTH = 10002;
     const ERROR_QUERY = 10003;
     const ERROR_PREPARE = 10004;
 
     private $protocol = null;
-
     public $onResult = null;
     /*
      * 链接池最大连接数
@@ -85,6 +83,7 @@ class MySQL {
             $binary = $this->protocol->responseAuth($data, $this->config['database'], $this->config['user'], $this->config['password'], $this->config['charset']);
             if (is_array($binary)) {//error??
                 $binaryData = $this->protocol->packErrorData(self::ERROR_CONN, $binary['error_msg']);
+                //随后mysql会主动断开连接 回调onclose
                 \Logger::log("连接mysql 失败 {$binary['error_msg']}");
                 call_user_func($this->onResult, $binaryData, $db->clientFd);
                 return;
@@ -100,6 +99,7 @@ class MySQL {
                 $this->join($db);
                 return;
             } else {
+                //随后mysql会主动断开连接 回调onclose
                 \Logger::log("连接mysql 失败 $ret");
                 $binaryData = $this->protocol->packErrorData(self::ERROR_AUTH, "auth error when connect");
                 call_user_func($this->onResult, $binaryData, $db->clientFd);
@@ -137,6 +137,10 @@ class MySQL {
     }
 
     public function onError($db) {
+        if ($db->status === "CONNECT") {
+            $this->usedSize--;
+            $this->table->decr(MYSQL_CONN_KEY, $this->datasource);
+        }
         \Logger::log("something error {$db->errCode}");
         $binaryData = $this->protocol->packErrorData(self::ERROR_QUERY, "something error {$db->errCode}");
         return call_user_func($this->onResult, $binaryData, $db->clientFd);
@@ -161,9 +165,13 @@ class MySQL {
         $db->buffer = '';
         $db->eofCnt = 0;
         $db->in_tran = 0;
+
+        //先加
+        $this->usedSize++;
+        $this->table->incr(MYSQL_CONN_KEY, $this->datasource);
+
         $db->connect($this->config['host'], $this->config['port']);
     }
-    
 
     public function query($data, $fd) {
         if (isset($this->fd2db[$fd])) {//已经分配了连接
@@ -194,8 +202,6 @@ class MySQL {
      */
     private function join($db) {
         //保存到空闲连接池中
-        $this->usedSize++;
-        $this->table->incr(MYSQL_CONN_KEY, $this->datasource);
         array_push($this->idlePool, $db);
         $this->doTask();
     }
@@ -270,4 +276,5 @@ class MySQL {
         }
         return false;
     }
+
 }

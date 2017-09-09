@@ -136,6 +136,7 @@ class MysqlProxy {
 //        $jsonConfig = \CloudConfig::get("platform/proxy_shequ", "test");
 //        $config = json_decode($jsonConfig, true);
         $array = \Yosymfony\Toml\Toml::Parse(__DIR__ . '/../config.toml');
+
         foreach ($array as $key => $value) {
             if ($key == "common") {
 
@@ -143,7 +144,9 @@ class MysqlProxy {
                 $this->redisHost = $ex[0];
                 $this->redisPort = $ex[1];
 
-                $this->redisAuth = $value['redis_auth'];
+                if (isset($value['redis_auth'])) {
+                    $this->redisAuth = $value['redis_auth'];
+                }
 
                 $this->RECORD_QUERY = $value['record_query'];
             } else {//nodes
@@ -155,6 +158,27 @@ class MysqlProxy {
 //                        throw new \Exception("detect duplicate dbname '{$name}'");
 //                    }
                     $this->targetConfig[$name] = $this->getEntry($db, $value);
+                }
+            }
+        }
+        if (isset($array['common']['include_path'])) {
+            $this->getConfigChildNode($array['common']['include_path']);
+        }
+    }
+
+    private function getConfigChildNode($path) {
+        $iterator = new \FilesystemIterator($path);
+        foreach ($iterator as $fileinfo) {
+            if ($fileinfo->isFile()) {
+                if ($fileinfo->getExtension() === "toml") {
+                    $node = \Yosymfony\Toml\Toml::Parse($fileinfo->getPathname());
+                    foreach ($node as $nodeName => $value) {
+                        foreach ($value['db'] as $db) {
+                            $ex = explode(";", $db);
+                            $name = explode("=", $ex[0])[1];
+                            $this->targetConfig[$name] = $this->getEntry($db, $value);
+                        }
+                    }
                 }
             }
         }
