@@ -152,12 +152,7 @@ class MysqlProxy {
             } else {//nodes
 //                $node = $key;
                 foreach ($value['db'] as $db) {
-                    $ex = explode(";", $db);
-                    $name = explode("=", $ex[0])[1];
-//                    if (isset($this->targetConfig[$name])) {
-//                        throw new \Exception("detect duplicate dbname '{$name}'");
-//                    }
-                    $this->targetConfig[$name] = $this->getEntry($db, $value);
+                    $this->getEntry($db, $value);
                 }
             }
         }
@@ -174,9 +169,7 @@ class MysqlProxy {
                     $node = \Yosymfony\Toml\Toml::Parse($fileinfo->getPathname());
                     foreach ($node as $nodeName => $value) {
                         foreach ($value['db'] as $db) {
-                            $ex = explode(";", $db);
-                            $name = explode("=", $ex[0])[1];
-                            $this->targetConfig[$name] = $this->getEntry($db, $value);
+                            $this->getEntry($db, $value);
                         }
                     }
                 }
@@ -208,7 +201,7 @@ class MysqlProxy {
 
     private function getEntry($db, $value) {
         $dbEx = explode(";", $db);
-        // parse `db = ["name=db1;charset=gbk","name=db2;max_conn=100","name=db3"] `
+        // parse `db = ["name=dummy_db1;realname=db1;charset=gbk","name=db2;max_conn=100","name=db3"] `
         $dbArr = $ret = [];
         foreach ($dbEx as $v) {
             $exDb = explode("=", $v);
@@ -222,11 +215,14 @@ class MysqlProxy {
                 case "max_conn":
                     $dbArr['maxconn'] = $exDb[1];
                     break;
+                case "realname"://传给db的真实名字
+                    $dbArr['real_database'] = $exDb[1];
+                    break;
                 default:
                     throw new \Exception("the config format error $v");
-                    break;
             }
         }
+
         //charset  max_conn如果没设置走默认的
         if (!isset($dbArr['charset'])) {
             $dbArr['charset'] = $value['default_charset'];
@@ -239,6 +235,12 @@ class MysqlProxy {
         if (!isset($dbArr['database'])) {
             throw new \Exception("the db name can not be null");
         }
+
+        //没设置 name=realname
+        if (!isset($dbArr['real_database'])) {
+            $dbArr['real_database'] = $dbArr['database'];
+        }
+
         if (!isset($dbArr['maxconn'])) {
             throw new \Exception("the maxconn can not be null");
         } else {
@@ -251,9 +253,7 @@ class MysqlProxy {
         if (!isset($value['username'])) {
             throw new \Exception("the username can not be null");
         }
-        if (!isset($value['password'])) {
-            throw new \Exception("the password can not be null");
-        }
+
         //init master
         if (!isset($value['master_host'])) {
             throw new \Exception("the master_host can not be null");
@@ -263,8 +263,8 @@ class MysqlProxy {
                 'host' => $hostEx[0],
                 'port' => $hostEx[1],
                 'user' => $value['username'],
-                'password' => $value['password'],
-                'database' => $dbArr['database'],
+                'password' => $this->getPassword($value),
+                'database' => $dbArr['real_database'],
                 'charset' => $dbArr['charset'],
                 'maxconn' => $realMax
             );
@@ -285,8 +285,8 @@ class MysqlProxy {
                     'host' => $hostEx[0],
                     'port' => $hostEx[1],
                     'user' => $value['username'],
-                    'password' => $value['password'],
-                    'database' => $dbArr['database'],
+                    'password' => $this->getPassword($value),
+                    'database' => $dbArr['real_database'],
                     'charset' => $dbArr['charset'],
                     'maxconn' => $realMax
                 );
@@ -298,7 +298,19 @@ class MysqlProxy {
                 $index++;
             }
         }
-        return $ret;
+
+        $this->targetConfig[$dbArr['database']] = $ret;
+    }
+
+    private function getPassword($value) {
+        if (isset($value['encrypt_password'])) {
+            return base64_decode($value['encrypt_password']);
+        }
+        if (!isset($value['password'])) {
+            throw new \Exception("invalid password");
+        } else {
+            return $value['password'];
+        }
     }
 
     public function start() {

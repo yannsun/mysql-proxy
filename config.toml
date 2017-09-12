@@ -30,6 +30,9 @@ port = 9536
 #是否守护进程方式运行
 daemon=false
 
+#子node配置文件
+#include_path = "/src/mysql-proxy/conf.d/"
+
 
 #mysql数据源配置
 
@@ -59,8 +62,10 @@ daemon=false
 [node2]
         master_host = "127.0.0.1:3306"
         username = "root"
-        password= "xxxx"
+        #使用genpwd程序生成的加密的密码,配置`encrypt_password`后将忽略password配置
+        encrypt_password= "d29zgGlnsW8zNQ=="
         slave_host = ["127.0.0.1:3306;weight=1","127.0.0.1:3306;weight=2"]
-        db = ["name=testdb"] 
+        #realname是传给mysql server的数据库名,name是客户端连接的名,可以只配置name此时realname等于name
+        db = ["name=dummy_mysql;realname=mysql"] 
         default_max_conn = 20
         default_charset = "utf8"
