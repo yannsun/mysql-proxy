@@ -177,24 +177,6 @@ class MysqlProxy {
         }
     }
 
-    /**
-     * 连接redis 增加redis密码认证
-     */
-    private function connectRedis() {
-        if (empty($this->redis)) {
-            $client = new \redis;
-            if ($client->pconnect($this->redisHost, $this->redisPort)) {
-                //判断是否设置密码
-                if (!empty($this->redisAuth)) {
-                    $client->auth($this->redisAuth);
-                }
-                $this->redis = $client;
-            } else {
-                return;
-            }
-        }
-    }
-
     /*
      * 获取每个db维度的配置
      */
@@ -508,10 +490,31 @@ class MysqlProxy {
     }
 
 //____________________________________________________task worker__________________________________________________
+    /**
+     * 连接redis 增加redis密码认证
+     */
+    private function connectRedis() {
+        if (empty($this->redis)) {
+            $client = new \redis;
+            if ($client->pconnect($this->redisHost, $this->redisPort)) {
+                //判断是否设置密码
+                if (!empty($this->redisAuth)) {
+                    $client->auth($this->redisAuth);
+                }
+                $this->redis = $client;
+            } else {
+                return false;
+            }
+        }
+        return true;
+    }
+
     //task callback 上报连接数 && 清理redis
     public function OnTaskTimer($serv) {
         $count = $this->table->get(MYSQL_CONN_KEY);
-        $this->connectRedis();
+        if (!$this->connectRedis()) {
+            return;
+        }
         /*
          * count layout
          *                                                hash
@@ -536,7 +539,9 @@ class MysqlProxy {
     }
 
     public function OnTask($serv, $task_id, $from_id, $data) {
-        $this->connectRedis();
+        if (!$this->connectRedis()) {
+            return;
+        }
         $date = date("Y-m-d");
         $expireFlag = false;
         if (!$this->redis->exists(REDIS_SLOW . $date)) {
