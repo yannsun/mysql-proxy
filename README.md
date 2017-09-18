@@ -20,8 +20,9 @@
 
 **2. 安装PHP-X**
 
-- cd ./PHP-X
-- cmake -DPHP_CONFIG_DIR = [php-config路径] （例如：/usr/local/php/bin 后面不要带/）
+- 首先clone下来本项目，然后执行`git submodule update --init --recursive` 拉取子项目。
+- cd ./cpp_module/PHP-X
+- cmake . -DPHP_CONFIG_DIR = [php-config路径] （例如：/usr/local/php/bin 后面不要带/）
 - make -j 4
 - sudo make install
 
