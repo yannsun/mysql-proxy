@@ -100,6 +100,7 @@
                                 <tbody>
                                     <tr height="32">
                                         <?php
+                                        unset($value['request_num']);
                                         foreach ($value as $k => $v)
                                         {
                                             $name = ($k == "client_count") ? "客户端连接数" : $k;
@@ -123,7 +124,6 @@
                                 <tr>
                                     <th>&nbsp;</th>
                                     <th>开始时间</th>
-                                    <th>结束时间</th>
                                     <th>sql耗时(ms)</th>
                                     <th>sql语句</th>
                                     <th>数据量大小(字节)</th>
@@ -142,8 +142,7 @@
                                             <a class="add-favorite" href="javascript:void(0);" ><i class="fa fa-star-o fa-lg"></i></a>
                                         </td>
                                         <td><?php echo date('Y-m-d H:i:s', substr($value['start'], 0, 10)) ?></td>
-                                        <td><?php echo date('Y-m-d H:i:s', substr($value['start'], 0, 10)) ?></td>
-                                        <td><?php echo $value['end'] - $value['start'] ?></td>
+                                        <td><?php echo $value['time'] ?></td>
                                         <td><?php echo $value['sql'] ?></td>
                                         <td><?php echo $value['size'] ?></td>
                                         <td><?php echo $value['datasource'] ?></td>
@@ -162,7 +161,6 @@
                                     <tr>
                                         <th>&nbsp;</th>
                                         <th>开始时间</th>
-                                        <th>结束时间</th>
                                         <th>sql耗时(ms)</th>
                                         <th>sql语句</th>
                                         <th>数据量大小(字节)</th>
@@ -181,8 +179,7 @@
                                                 <a class="add-favorite" href="javascript:void(0);" ><i class="fa fa-star-o fa-lg"></i></a>
                                             </td>
                                             <td><?php echo date('Y-m-d H:i:s', substr($value['start'], 0, 10)) ?></td>
-                                            <td><?php echo date('Y-m-d H:i:s', substr($value['start'], 0, 10)) ?></td>
-                                            <td><?php echo $value['end'] - $value['start'] ?></td>
+                                            <td><?php echo $value['time'] ?></td>
                                             <td><?php echo $value['sql'] ?></td>
                                             <td><?php echo $value['size'] ?></td>
                                             <td><?php echo $value['datasource'] ?></td>

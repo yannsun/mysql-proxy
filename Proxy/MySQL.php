@@ -139,7 +139,7 @@ class MySQL {
     public function onError($db) {
         if ($db->status === "CONNECT") {
             $this->usedSize--;
-            $this->table->decr(MYSQL_CONN_KEY, $this->datasource);
+            $this->table->decr("table_key", $this->datasource);
         }
         \Logger::log("something error {$db->errCode}");
         $binaryData = $this->protocol->packErrorData(self::ERROR_QUERY, "something error {$db->errCode}");
@@ -168,7 +168,7 @@ class MySQL {
 
         //先加
         $this->usedSize++;
-        $this->table->incr(MYSQL_CONN_KEY, $this->datasource);
+        $this->table->incr("table_key", $this->datasource);
 
         $db->connect($this->config['host'], $this->config['port']);
     }
@@ -244,7 +244,7 @@ class MySQL {
             if ($res === $db) {
                 unset($this->idlePool[$k]);
                 $this->usedSize--;
-                $this->table->decr(MYSQL_CONN_KEY, $this->datasource);
+                $this->table->decr("table_key", $this->datasource);
                 return true;
             }
         }
@@ -263,7 +263,7 @@ class MySQL {
                 \Logger::log("client close when in transaction");
                 unset($this->fd2db[$fd]);
                 $this->usedSize--;
-                $this->table->decr(MYSQL_CONN_KEY, $this->datasource);
+                $this->table->decr("table_key", $this->datasource);
                 $db->close();
             }
             unset($this->fd2db[$fd]);

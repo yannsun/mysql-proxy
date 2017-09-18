@@ -19,6 +19,9 @@ class MysqlProxy {
     private $redisPort = NULL;
     private $redisAuth = NULL;
     private $RECORD_QUERY = false;
+    //阈值
+    private $slow_limit = 100;
+    private $big_limit = 204800;
     /*
      * PROXY的ip 用于proxy集群上报加到key里面
      */
@@ -81,8 +84,8 @@ class MysqlProxy {
             }
         }
         $this->table->column("client_count", \swoole_table::TYPE_INT, 4);
+        $this->table->column("request_num", \swoole_table::TYPE_INT, 4);
         $this->table->create();
-        // $this->table->set(MYSQL_CONN_KEY, $arr);
     }
 
     public function init() {
@@ -121,7 +124,6 @@ class MysqlProxy {
         define("REDIS_SLOW", $common['redis_slow']);
         define("REDIS_BIG", $common['redis_big']);
 
-        define("MYSQL_CONN_KEY", $common['mysql_conn_key']);
         define("MYSQL_CONN_REDIS_KEY", $common['mysql_conn_redis_key']);
 
         define("WORKER_NUM", $common['worker_num']);
@@ -146,6 +148,14 @@ class MysqlProxy {
 
                 if (isset($value['redis_auth'])) {
                     $this->redisAuth = $value['redis_auth'];
+                }
+
+                if (isset($value['slow_limit'])) {
+                    $this->slow_limit = (int) $value['slow_limit'];
+                }
+
+                if (isset($value['big_limit'])) {
+                    $this->big_limit = (int) $value['big_limit'];
                 }
 
                 $this->RECORD_QUERY = $value['record_query'];
@@ -330,6 +340,7 @@ class MysqlProxy {
     }
 
     public function OnReceive(\swoole_server $serv, $fd, $from_id, $data) {
+        $this->table->incr("table_key", "request_num");
         if ($this->clients[$fd]['status'] == self::CONNECT_SEND_AUTH) {
             $dbName = $this->protocol->getDbName($data);
             if (!isset($this->targetConfig[$dbName])) {
@@ -411,12 +422,15 @@ class MysqlProxy {
                 $logData = array(
                     'start' => $this->clients[$fd]['start'],
                     'size' => strlen($binaryData),
-                    'end' => $end,
+                    'time' => $end - $this->clients[$fd]['start'],
                     'sql' => $this->clients[$fd]['sql'],
                     'datasource' => $this->clients[$fd]['datasource'],
                     'client_ip' => $this->clients[$fd]['client_ip'],
                 );
-                $this->serv->task($logData);
+                if ($logData['time'] > $this->slow_limit
+                        or $logData['size'] > $this->big_limit) {
+                    $this->serv->task($logData);
+                }
             }
         }
     }
@@ -432,13 +446,13 @@ class MysqlProxy {
         } else {
             $this->clients[$fd]['client_ip'] = 0;
         }
-        $this->table->incr(MYSQL_CONN_KEY, "client_count");
+        $this->table->incr("table_key", "client_count");
     }
 
     public function OnClose(\swoole_server $serv, $fd) {
 //        \Logger::log("client close $fd");
         //todo del from client
-        $this->table->decr(MYSQL_CONN_KEY, "client_count");
+        $this->table->decr("table_key", "client_count");
         //remove from task queue,if possible
         if (isset($this->clients[$fd]['datasource'])) {
             $this->pool[$this->clients[$fd]['datasource']]->removeTask($fd);
@@ -454,7 +468,7 @@ class MysqlProxy {
     public function OnWorkerStart(\swoole_server $serv, $worker_id) {
         $this->getConfigNode();
         if ($worker_id >= $serv->setting['worker_num']) {
-            $serv->tick(5000, array($this, "OnTaskTimer"));
+            $serv->tick(3000, array($this, "OnTaskTimer"));
 //            $serv->tick(5000, array($this, "OnPing"));
             swoole_set_process_name("mysql proxy task");
             $result = swoole_get_local_ip();
@@ -511,7 +525,7 @@ class MysqlProxy {
 
     //task callback 上报连接数 && 清理redis
     public function OnTaskTimer($serv) {
-        $count = $this->table->get(MYSQL_CONN_KEY);
+        $count = $this->table->get("table_key");
         if (!$this->connectRedis()) {
             return;
         }
@@ -529,13 +543,16 @@ class MysqlProxy {
         $this->redis->expire(MYSQL_CONN_REDIS_KEY, 60);
 
         $date = date("Y-m-d");
-
         $total = $this->redis->zCard(REDIS_SLOW . $date);
         if ($total > 100) {
-            $this->redis->zRemRangeByRank(REDIS_SLOW . $date, 0, -100); //删除排名100后的所有成员 返回删除数用于计算qps
-            $qpsCount = (int) $this->redis->zRemRangeByRank(REDIS_BIG . $date, 0, -100);
-            $this->redis->set("proxy_qps", $qpsCount / 5);
+            $this->redis->zRemRangeByRank(REDIS_SLOW . $date, 0, -100); //删除排名100后的所有成员
+            $this->redis->zRemRangeByRank(REDIS_BIG . $date, 0, -100);
         }
+
+        $request_num = (int) $this->table->get("table_key", "request_num");
+        $this->table->set("table_key", array("request_num" => 0));
+        
+        $this->redis->set("proxy_qps", $request_num / 3);
     }
 
     public function OnTask($serv, $task_id, $from_id, $data) {
@@ -548,10 +565,14 @@ class MysqlProxy {
             $expireFlag = true;
         }
         $ser = \swoole_serialize::pack($data);
-        $this->redis->zadd(REDIS_BIG . $date, $data['size'], $ser);
-        $time = $data['end'] - $data['start'];
-        $this->redis->zadd(REDIS_SLOW . $date, $time, $ser);
-        //$this->redis->lPush('sqllist' . $date, $ser);
+        if ($data['size'] > $this->big_limit) {
+            $this->redis->zadd(REDIS_BIG . $date, $data['size'], $ser);
+        }
+
+        if ($data['time'] > $this->slow_limit) {
+            $this->redis->zadd(REDIS_SLOW . $date, $data['time'], $ser);
+        }
+
 
         if ($expireFlag) {
             $this->redis->expireAt(REDIS_BIG . $date, strtotime(date("Y-m-d 23:59:59"))); //凌晨过期

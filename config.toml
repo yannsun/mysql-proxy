@@ -1,7 +1,7 @@
 #是否开启记录日志功能，开启后每次查询都会发送给REDIS_HOST所在的redis，用于生成web管理界面 统计慢查询等
 #开启后会降低30%左右的性能
 [common]
-record_query = false
+record_query = true
 
 #记录客户端sql查询的redis机器
 redis_host = "127.0.0.1:6379"
@@ -12,10 +12,7 @@ redis_auth = ""
 #redis key
 redis_slow ="sqlslow"
 redis_big="sqlbig"
-
-
-#swoole table的key
-mysql_conn_key="proxy_conn_key"
+#用于上报连接数的redis的key
 mysql_conn_redis_key="proxy_connection"
 
 #swoole server通用配置信息
@@ -32,6 +29,12 @@ daemon=false
 
 #子node配置文件
 #include_path = "/src/mysql-proxy/conf.d/"
+
+#慢日志阈值，超过这个数才记录 单位毫秒 不配置默认100ms
+slow_limit = 100
+
+#大数据块阈值，超过这个数才记录 单位字节 不配置默认200kb
+big_limit = 204800
 
 
 #mysql数据源配置
@@ -63,7 +66,7 @@ daemon=false
         master_host = "127.0.0.1:3306"
         username = "root"
         #使用genpwd程序生成的加密的密码,配置`encrypt_password`后将忽略password配置
-        encrypt_password= "d29zgGlnsW8zNQ=="
+        encrypt_password= "d29zaGlndW8zNQ=="
         slave_host = ["127.0.0.1:3306;weight=1","127.0.0.1:3306;weight=2"]
         #realname是传给mysql server的数据库名,name是客户端连接的名,可以只配置name此时realname等于name
         db = ["name=dummy_mysql;realname=mysql"] 
