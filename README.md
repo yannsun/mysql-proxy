@@ -22,7 +22,7 @@
 
 - 首先clone下来本项目，然后执行`git submodule update --init --recursive` 拉取子项目。
 - cd ./cpp_module/PHP-X
-- cmake . -DPHP_CONFIG_DIR = [php-config路径] （例如：/usr/local/php/bin 后面不要带/）
+- cmake . -DPHP_CONFIG_DIR=[php-config路径] （例如：/usr/local/php/bin 后面不要带/）
 - make -j 4
 - sudo make install
 
@@ -48,7 +48,7 @@
 - make && make install
 - 配置 php.ini extension = mysql-proxy.so
 
-> 注意 extension = mysql-proxy.so 要在 extension = swoole.so 后面加载
+> 注意 extension = mysql_proxy.so 要在 extension = swoole.so 后面加载
 
 **5.  配置 config.toml**
 
