@@ -46,7 +46,7 @@ big_limit = 204800
 
         #主库和从库用户名密码必须一致
         username = "root"
-        password= "xxxx"
+        password= "root"
 
         #从库实例配置
         slave_host = ["127.0.0.1:3306;weight=1","127.0.0.1:3306;weight=2"]
